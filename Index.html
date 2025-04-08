@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flappy Square 2.0</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { height: 100vh; font-family: 'Arial', sans-serif; background: linear-gradient(45deg, #1a0033, #2a004d); overflow: hidden; }
+    #gameContainer { position: relative; width: 480px; height: 640px; margin: auto; }
+    canvas { display: block; background: linear-gradient(to bottom, #1a0033, #2a004d); border: 2px solid #00ffcc; }
+    #ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+    .neon-btn { margin: 10px; padding: 15px 30px; border: none; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; background: #00ffcc; color: #1a0033; text-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc; transition: all 0.3s; }
+    .neon-btn:hover { background: #ff00ff; color: #fff; text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff; }
+    .neon-text { font-size: 48px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc, 0 0 30px #ff00ff; margin-bottom: 20px; }
+    .hidden { display: none; }
+    #store, #achievements, #leaderboard { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #00ffcc; }
+    .item { margin: 10px; padding: 10px; border: 2px solid #00ffcc; border-radius: 10px; display: inline-block; background: #2a004d; }
+    .item.equipped { border-color: #ff00ff; }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="480" height="640"></canvas>
+    <div id="startScreen" class="ui">
+      <div class="neon-text">FLAPPY SQUARE</div>
+      <button class="neon-btn" onclick="showModeScreen()">START</button>
+      <button class="neon-btn" onclick="showStore()">STORE</button>
+      <button class="neon-btn" onclick="showAchievements()">ACHIEVEMENTS</button>
+      <button class="neon-btn" onclick="showLeaderboard()">LEADERBOARD</button>
+    </div>
+    <div id="modeScreen" class="ui hidden">
+      <div class="neon-text">SELECT MODE</div>
+      <button class="neon-btn" onclick="startGame('easy')">EASY</button>
+      <button class="neon-btn" onclick="startGame('medium')">MEDIUM</button>
+      <button class="neon-btn" onclick="startGame('hard')">HARD</button>
+      <button class="neon-btn" onclick="showStartScreen()">BACK</button>
+    </div>
+    <div id="store" class="hidden">
+      <div class="neon-text">STORE</div>
+      <div>Coins: <span id="coinCount">0</span></div>
+      <div class="item" onclick="buyItem('smile')">Smile Face (100 coins) <span id="smile-equipped" class="equipped">EQUIPPED</span></div>
+      <div class="item" onclick="buyItem('heart')">Heart (250 coins) <span id="heart-equipped" class="equipped hidden">EQUIPPED</span></div>
+      <button class="neon-btn" onclick="showStartScreen()">BACK</button>
+    </div>
+    <div id="achievements" class="hidden">
+      <div class="neon-text">ACHIEVEMENTS</div>
+      <div>First Flight (Score 1)</div>
+      <div>Laser Survivor (Survive 15 lasers)</div>
+      <div>Ninja (Score 30)</div>
+      <div>Collector (Collect 100 coins)</div>
+      <button class="neon-btn" onclick="showStartScreen()">EXIT</button>
+    </div>
+    <div id="leaderboard" class="hidden">
+      <div class="neon-text">LEADERBOARD</div>
+      <div>1. <span id="score1">0</span></div>
+      <div>2. <span id="score2">0</span></div>
+      <div>3. <span id="score3">0</span></div>
+      <div>4. <span id="score4">0</span></div>
+      <div>5. <span id="score5">0</span></div>
+      <button class="neon-btn" onclick="showStartScreen()">EXIT</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let square = { x: 50, y: 150, size: 20, color: "#ffaa00", vy: 0, trail: [] };
+    let gravity = 0.6, jump = -10;
+    let obstacles = [];
+    let score = 0, coins = 0, isGameOver = true;
+    let mode = 'medium'; // easy, medium, hard
+    let obstacleSpeed = 4, obstacleGap = 140;
+
+    const screens = {
+      start: document.getElementById("startScreen"),
+      mode: document.getElementById("modeScreen"),
+      store: document.getElementById("store"),
+      achievements: document.getElementById("achievements"),
+      leaderboard: document.getElementById("leaderboard")
+    };
+
+    function showScreen(screenId) {
+      Object.values(screens).forEach(screen => screen.classList.add("hidden"));
+      screens[screenId].classList.remove("hidden");
+    }
+
+    function showStartScreen() { showScreen("start"); }
+    function showModeScreen() { showScreen("mode"); }
+    function showStore() { showScreen("store"); updateCoins(); }
+    function showAchievements() { showScreen("achievements"); }
+    function showLeaderboard() { showScreen("leaderboard"); updateLeaderboard(); }
+
+    function startGame(selectedMode) {
+      mode = selectedMode;
+      if (mode === 'easy') { obstacleSpeed = 2; obstacleGap = 160; }
+      else if (mode === 'medium') { obstacleSpeed = 4; obstacleGap = 140; }
+      else if (mode === 'hard') { obstacleSpeed = 6; obstacleGap = 120; }
+      square.y = 150; square.vy = 0; obstacles = []; score = 0; isGameOver = false;
+      showScreen("start"); // Hide screens during game
+      update();
+    }
+
+    function drawSquare() {
+      ctx.fillStyle = square.color;
+      ctx.fillRect(square.x, square.y, square.size, square.size);
+      square.trail.push({ x: square.x + square.size / 2, y: square.y + square.size / 2 });
+      if (square.trail.length > 10) square.trail.shift();
+      ctx.beginPath();
+      ctx.strokeStyle = "#00ffff";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < square.trail.length - 1; i++) {
+        ctx.moveTo(square.trail[i].x, square.trail[i].y);
+        ctx.lineTo(square.trail[i + 1].x, square.trail[i + 1].y);
+      }
+      ctx.stroke();
+    }
+
+    function drawObstacles() {
+      ctx.fillStyle = "#ff00cc";
+      obstacles.forEach(obs => {
+        ctx.fillRect(obs.x, 0, obs.width, obs.top);
+        ctx.fillRect(obs.x, obs.bottom, obs.width, canvas.height - obs.bottom);
+        ctx.beginPath(); ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 2;
+        ctx.moveTo(obs.x + obs.width / 2, 0); ctx.lineTo(obs.x + obs.width / 2, obs.top); ctx.stroke();
+        ctx.moveTo(obs.x + obs.width / 2, obs.bottom); ctx.lineTo(obs.x + obs.width / 2, canvas.height); ctx.stroke();
+      });
+    }
+
+    function update() {
+      if (isGameOver) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      square.vy += gravity;
+      square.y += square.vy;
+
+      if (square.y + square.size > canvas.height || square.y < 0) gameOver();
+
+      if (obstacles.length === 0 || obstacles[obstacles.length - 1].x < canvas.width - 200) {
+        const top = Math.random() * (canvas.height - obstacleGap - 100) + 20;
+        obstacles.push({ x: canvas.width, width: 50, top: top, bottom: top + obstacleGap, passed: false });
+      }
+
+      obstacles.forEach(obs => {
+        obs.x -= obstacleSpeed;
+
+        if (square.x < obs.x + obs.width && square.x + square.size > obs.x &&
+            (square.y < obs.top || square.y + square.size > obs.bottom)) gameOver();
+
+        if (!obs.passed && obs.x + obs.width < square.x) {
+          obs.passed = true; score++; coins += 1; updateCoins();
+          if (score % 5 === 0) obstacleSpeed += 0.5;
+        }
+      });
+
+      drawSquare();
+      drawObstacles();
+      ctx.fillStyle = "#00ffcc"; ctx.font = "20px Arial"; ctx.fillText("Score: " + score, 10, 30);
+
+      obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+      if (!isGameOver) requestAnimationFrame(update);
+    }
+
+    function gameOver() {
+      isGameOver = true;
+      updateLeaderboard();
+      alert("Game Over! Score: " + score + " Coins: " + coins);
+      showStartScreen(); // Return to start screen
+    }
+
+    function jumpUp() { if (!isGameOver) square.vy = jump; }
+
+    function updateCoins() { 
+      document.getElementById("coinCount").textContent = coins; 
+    }
+
+    function buyItem(item) {
+      const prices = { smile: 100, heart: 250 };
+      if (coins >= prices[item]) {
+        coins -= prices[item];
+        updateCoins();
+        document.getElementById(item + "-equipped").classList.remove("hidden");
+        square.color = item === "smile" ? "#ffaa00" : "#ff00ff";
+      } else alert("Not enough coins!");
+    }
+
+    function updateLeaderboard() {
+      let scores = JSON.parse(localStorage.getItem("leaderboard") || "[]");
+      scores.push(score); scores.sort((a, b) => b - a); scores = scores.slice(0, 5);
+      localStorage.setItem("leaderboard", JSON.stringify(scores));
+      for (let i = 0; i < 5; i++) document.getElementById("score" + (i + 1)).textContent = scores[i] || 0;
+    }
+
+    document.addEventListener("keydown", e => { if (e.code === "Space") jumpUp(); });
+    canvas.addEventListener("click", jumpUp);
+    showStartScreen(); // Default screen
+  </script>
+</body>
+</html>
